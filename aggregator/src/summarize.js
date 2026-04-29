@@ -30,28 +30,17 @@ function client(cfg) {
 }
 
 /**
- * Generate a 300-500 character Chinese summary for a news item.
+ * Generate a short Chinese teaser for a digest item, based on the
+ * headline only.
  *
- * Prefers fetching the article body via the reader for better fidelity;
- * falls back to title-only summarization on reader failure.
- *
- * Returns a Chinese-language string, or null on hard LLM failure.
+ * Digest summaries intentionally do not fetch article bodies: a daily
+ * digest may contain 100+ items and per-item body fetches would be slow,
+ * costly, and fragile (many readers are foreign-hosted). For deep,
+ * body-grounded summaries see summarizeTldr() (used in the fulltext lane).
  */
 export async function summarizeForDigest(cfg, item) {
   const tokens = cfg.llm.digest_max_tokens ?? 600;
-
-  let body = null;
-  try {
-    body = await fetchMarkdown(cfg, item.url, 6000);
-  } catch (err) {
-    console.warn(`[summarize] reader failed for ${item.url}: ${err.message}`);
-  }
-
-  const prompt = body
-    ? buildBodyPrompt(item, body)
-    : buildTitleOnlyPrompt(item);
-
-  return await callLlm(cfg, prompt, tokens);
+  return await callLlm(cfg, buildTitleOnlyPrompt(item), tokens);
 }
 
 /**
@@ -100,15 +89,16 @@ function buildTitleOnlyPrompt(item) {
     {
       role: 'system',
       content:
-        'You write extremely concise Chinese news teasers when only a headline is available. ' +
-        'Output ONLY plain Chinese text, 50-100 characters, no markdown.',
+        'You write concise Chinese news teasers based only on a headline. ' +
+        'Output ONLY plain Chinese text, 80-150 characters, no markdown, no preface.',
     },
     {
       role: 'user',
       content:
         `Source: ${item.source}\nTitle: ${item.title}\n\n` +
-        `Task: paraphrase the headline into a 50-100 character Chinese teaser. ` +
-        `Indicate uncertainty if the headline is ambiguous; do not invent details.`,
+        `Task: rewrite the headline as a richer 80-150 character Chinese teaser ` +
+        `that previews what the article likely covers. Indicate uncertainty if ` +
+        `the headline is ambiguous; do not invent specific facts or numbers.`,
     },
   ];
 }

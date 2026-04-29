@@ -125,6 +125,13 @@ export async function pushDigest(cfg) {
 
   const grouped = groupByCategoryAndSource(cfg, fresh);
   const sourceCount = countSources(grouped);
+
+  // Pre-compute summaries in parallel batches so 100+ item digests don't
+  // serialize behind LLM latency. Items keep their summary on `_summary`.
+  if (cfg.digest.enable_summary) {
+    await populateSummaries(cfg, grouped, 5);
+  }
+
   const sections = [
     `> 📰 **hotBrief** · ${formatTime(new Date())}`,
     `> 共 **${fresh.length}** 条 · 来自 **${sourceCount}** 个来源`,
@@ -148,12 +155,8 @@ export async function pushDigest(cfg) {
         const hotBadge = formatHot(item.hot);
         const hotSuffix = hotBadge ? `  · 🔥 ${hotBadge}` : '';
         sections.push(`${i + 1}. [${item.title}](${item.url})${hotSuffix}`);
-
-        if (cfg.digest.enable_summary) {
-          const summary = await summarizeForDigest(cfg, item);
-          if (summary) {
-            sections.push('', `   > ${summary.replace(/\n+/g, '\n   > ')}`, '');
-          }
+        if (item._summary) {
+          sections.push('', `   > ${item._summary.replace(/\n+/g, '\n   > ')}`, '');
         }
       }
       sections.push('');
@@ -255,6 +258,36 @@ function groupByCategoryAndSource(cfg, items) {
     out.set(catId, new Map(ordered));
   }
   return out;
+}
+
+/**
+ * Run summarizeForDigest for every item in `grouped` with a fixed
+ * concurrency limit. Stores the result on `item._summary`.
+ */
+async function populateSummaries(cfg, grouped, concurrency = 5) {
+  const queue = [];
+  for (const sourceMap of grouped.values()) {
+    for (const list of sourceMap.values()) queue.push(...list);
+  }
+
+  const t0 = Date.now();
+  let completed = 0;
+
+  const worker = async () => {
+    while (queue.length > 0) {
+      const item = queue.shift();
+      try {
+        item._summary = await summarizeForDigest(cfg, item);
+      } catch (err) {
+        console.warn(`[push] summary failed for "${item.title}": ${err.message}`);
+        item._summary = null;
+      }
+      completed++;
+    }
+  };
+
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  console.log(`[push] summarized ${completed} items in ${Date.now() - t0}ms`);
 }
 
 function totalItems(sourceMap) {
