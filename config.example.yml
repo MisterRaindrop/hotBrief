@@ -12,8 +12,10 @@ llm:
   # Model identifier accepted by the chosen provider.
   model: "deepseek-chat"
   # Token budgets per call.
-  digest_max_tokens: 600
-  tldr_max_tokens: 200
+  digest_max_tokens: 600     # Chinese teaser per digest item
+  tldr_max_tokens: 200       # short Chinese TLDR for major-event push
+  body_max_tokens: 4000      # full-article body translation (foreign sources);
+                             # set high enough to cover 1:1 char output for a 6000-char body
 
 fulltext:
   # 'jina' is the only built-in reader for now.
@@ -404,5 +406,42 @@ digest:
   # When false, skip LLM teaser and emit titles only (zero LLM cost).
   enable_summary: true
   # Translate foreign-language (non-CJK) headlines to Simplified Chinese
-  # for RSSHub items. The original headline is kept as an italic subtitle.
+  # for any RSSHub/RSS items that still appear in the digest. With the
+  # foreign-fulltext channel enabled, foreign items normally do NOT appear
+  # in the digest at all (they are pushed separately full-text), but this
+  # remains useful as a safety net.
   translate_foreign_titles: true
+
+# === Per-source full-text push for foreign feeds (RSSHub + direct RSS) ===
+#
+# When enabled, every foreign feed (rsshub-* / rss-*) is pushed as one
+# (or several, when content overflows) ServerChan messages PER SOURCE per
+# digest cron firing. Each article in the message includes:
+#   - the original headline
+#   - a Chinese translation of the headline
+#   - the article body translated to Chinese (jina reader → LLM)
+#   - a 📧 mailto bookmark link (when bookmark.enabled is true)
+#   - the original-article link
+#
+# Server酱 single message limit is 32 KB; message_max_chars adds a margin.
+# When the rendered cards for one source exceed message_max_chars they
+# are split across pages titled "<label> · 1/N", "<label> · 2/N", ...
+foreign_fulltext:
+  enabled: true
+  window_hours: 8            # consider items fetched within the last N hours
+  body_max_chars: 6000       # truncate fetched body before LLM translation
+  message_max_chars: 28000   # per-ServerChan-message cap (headroom under 32KB)
+  cooldown_hours: 24         # do not re-push the same article within this window
+  llm_concurrency: 3         # parallel jina+LLM workers per cycle
+
+# === Bookmark links (mailto) ===
+#
+# Renders a "📧 收藏" link on every full-text card. Tapping the link in
+# WeChat / iOS opens the default mail composer pre-filled with the article
+# title, URL, and source attribution; sending the mail to yourself acts
+# as a persistent bookmark searchable in your inbox. No server-side state.
+bookmark:
+  enabled: false             # set to true and fill mailto_address to activate
+  type: "mailto"
+  mailto_address: ""         # e.g. "you@example.com"
+  subject_prefix: "📚 hotBrief 收藏"

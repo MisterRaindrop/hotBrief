@@ -18,39 +18,79 @@ import { recordPush, wasPushedRecently } from './db.js';
 
 const DEDUP_WINDOW_HOURS = 24;
 
+// Channel namespaces. Each push channel has its own cooldown so the same
+// item can appear in both a digest and a fulltext push (it usually won't,
+// since digest excludes foreign sources, but we keep them isolated).
+const KIND_DIGEST = 'digest';
+const KIND_FULLTEXT = 'fulltext';
+const KIND_CLUSTER = 'cluster';
+
+// ───────────── Digest channel (DailyHotApi items) ─────────────
+
 /**
- * Filter out items that were pushed (in any channel) within the dedup window.
- * Returns the items still eligible for pushing.
- *
- * `whitelisted` items bypass dedup — caller passes them through unchanged.
+ * Items not yet pushed via the digest channel within the dedup window.
  */
 export function filterUnpushed(items, windowHours = DEDUP_WINDOW_HOURS) {
-  return items.filter((it) => !wasPushedRecently(itemKey(it), windowHours));
+  return items.filter((it) => !wasPushedRecently(digestKey(it), windowHours));
 }
 
-/**
- * Mark a batch of items as pushed for the digest channel.
- */
 export function markDigestPushed(items) {
-  for (const it of items) recordPush(itemKey(it), 'digest');
+  for (const it of items) recordPush(digestKey(it), KIND_DIGEST);
 }
 
-/**
- * Mark a major-event cluster as pushed (cluster-level cooldown).
- */
+// ───────────── Fulltext channel (RSSHub + RSS items) ─────────────
+
+export function filterFullTextUnpushed(items, windowHours = DEDUP_WINDOW_HOURS) {
+  return items.filter((it) => !wasPushedRecently(fulltextKey(it), windowHours));
+}
+
+export function markFullTextPushed(items) {
+  for (const it of items) recordPush(fulltextKey(it), KIND_FULLTEXT);
+}
+
+// ───────────── Cluster channel (cross-source major events) ─────────────
+
 export function markClusterPushed(clusterKey) {
-  recordPush(`cluster:${clusterKey}`, 'cluster');
+  recordPush(`${KIND_CLUSTER}:${clusterKey}`, KIND_CLUSTER);
 }
 
 export function clusterPushedRecently(clusterKey, hours) {
-  return wasPushedRecently(`cluster:${clusterKey}`, hours);
+  return wasPushedRecently(`${KIND_CLUSTER}:${clusterKey}`, hours);
+}
+
+// ───────────── Key construction ─────────────
+
+/**
+ * Stable per-item key for the digest channel.
+ */
+export function digestKey(item) {
+  return `${KIND_DIGEST}:item:${item.source}:${normalize(item.title)}`;
 }
 
 /**
- * Stable per-item key for dedup. Uses normalized title + source.
+ * Stable per-item key for the fulltext channel.
+ */
+export function fulltextKey(item) {
+  return `${KIND_FULLTEXT}:item:${item.source}:${normalize(item.title)}`;
+}
+
+/**
+ * Legacy alias retained for callers that pre-date the kind-prefixed keys.
+ * Equivalent to `digestKey(item)`.
  */
 export function itemKey(item) {
-  return `item:${item.source}:${normalize(item.title)}`;
+  return digestKey(item);
+}
+
+// ───────────── Source classification ─────────────
+
+/**
+ * True when an item comes from a foreign-language feed (RSSHub or direct
+ * RSS). Used by both push lanes to decide whether to translate.
+ */
+export function isForeignSource(item) {
+  const src = String(item?.source || '');
+  return src.startsWith('rsshub-') || src.startsWith('rss-');
 }
 
 function normalize(s) {

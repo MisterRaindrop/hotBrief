@@ -23,6 +23,7 @@ import { applyKeywords } from './filter.js';
 import { clusterByTitle, selectMajorEvents } from './major.js';
 import { clusterPushedRecently, markClusterPushed } from './dedup.js';
 import { pushDigest, pushFulltext } from './push.js';
+import { pushForeignFulltext } from './fullpush.js';
 
 let running = false;
 let cfg = null;
@@ -56,9 +57,22 @@ function scheduleFetchLoop() {
 
 function scheduleDigests() {
   for (const expr of cfg.schedule.daily_reports || []) {
-    cron.schedule(expr, () => {
+    cron.schedule(expr, async () => {
       console.log(`[hotBrief] digest trigger: ${expr}`);
-      pushDigest(cfg).catch((e) => console.error(`[hotBrief] digest push failed: ${e.message}`));
+      try {
+        await pushDigest(cfg);
+      } catch (e) {
+        console.error(`[hotBrief] digest push failed: ${e.message}`);
+      }
+      // Foreign per-source full-text pushes share the digest cron by default.
+      // Run them after the digest so LLM bandwidth isn't contested.
+      if (cfg.foreign_fulltext?.enabled !== false) {
+        try {
+          await pushForeignFulltext(cfg);
+        } catch (e) {
+          console.error(`[hotBrief] foreign-fulltext push failed: ${e.message}`);
+        }
+      }
     });
     console.log(`[hotBrief] digest cron: ${expr}`);
   }

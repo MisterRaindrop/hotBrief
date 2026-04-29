@@ -6,7 +6,7 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-.PHONY: setup start stop restart logs test build pull clean help
+.PHONY: setup start stop restart logs test test-foreign build pull clean help
 
 help:
 	@echo "hotBrief — useful targets:"
@@ -15,7 +15,8 @@ help:
 	@echo "  make stop      docker compose down"
 	@echo "  make restart   docker compose restart aggregator"
 	@echo "  make logs      tail aggregator logs"
-	@echo "  make test      send a one-shot digest push for verification"
+	@echo "  make test         send a one-shot digest push for verification"
+	@echo "  make test-foreign send a one-shot foreign-source full-text push"
 	@echo "  make build     rebuild the aggregator image"
 	@echo "  make pull      pull latest dailyhotapi image"
 	@echo "  make clean     stop containers and remove the data volume directory"
@@ -43,6 +44,9 @@ logs:
 
 test:
 	docker compose exec aggregator node src/push.js --digest
+
+test-foreign:
+	docker compose exec aggregator node src/push.js --foreign-fulltext
 
 build:
 	docker compose build aggregator

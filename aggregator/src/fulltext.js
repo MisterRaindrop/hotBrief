@@ -14,10 +14,15 @@
  * limitations under the License.
  */
 
-import { request } from 'undici';
+import { request, ProxyAgent } from 'undici';
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const TRUNCATION_NOTICE = '\n\n…（content truncated; see original article）';
+
+// r.jina.ai is foreign-hosted; route through FOREIGN_HTTPS_PROXY when set.
+const proxyAgent = process.env.FOREIGN_HTTPS_PROXY
+  ? new ProxyAgent({ uri: process.env.FOREIGN_HTTPS_PROXY })
+  : null;
 
 /**
  * Fetch a URL's main content as Markdown via the configured reader.
@@ -40,12 +45,14 @@ export async function fetchMarkdown(cfg, targetUrl, maxChars) {
 
 async function fetchViaJina(targetUrl) {
   const url = `https://r.jina.ai/${targetUrl}`;
-  const { statusCode, body } = await request(url, {
+  const opts = {
     method: 'GET',
     headers: { Accept: 'text/markdown' },
     headersTimeout: REQUEST_TIMEOUT_MS,
     bodyTimeout: REQUEST_TIMEOUT_MS,
-  });
+  };
+  if (proxyAgent) opts.dispatcher = proxyAgent;
+  const { statusCode, body } = await request(url, opts);
   if (statusCode < 200 || statusCode >= 300) {
     throw new Error(`jina reader http ${statusCode}`);
   }

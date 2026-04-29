@@ -44,6 +44,43 @@ export async function summarizeForDigest(cfg, item) {
 }
 
 /**
+ * Translate a foreign-language Markdown article body into Simplified
+ * Chinese while preserving the source structure: paragraph breaks,
+ * lists, links (anchor text translated, URLs kept), code blocks (kept
+ * verbatim), and headings. Brand and product names (GitHub, Rust, iOS,
+ * etc.) stay in the original language.
+ *
+ * Returns translated Markdown, or null on LLM failure (caller may
+ * fall back to the untranslated body).
+ */
+export async function translateBody(cfg, item, body) {
+  const tokens = cfg.llm.body_max_tokens ?? 2000;
+  const prompt = [
+    {
+      role: 'system',
+      content:
+        'You translate foreign-language news/blog articles into Simplified ' +
+        'Chinese. Preserve the original Markdown structure: paragraph ' +
+        'breaks, headings (#, ##, ###), bulleted/numbered lists, links ' +
+        '(translate anchor text, keep URLs verbatim), inline code, code ' +
+        'blocks (do NOT translate code), block quotes. Keep brand names, ' +
+        'product names, and technology terms (GitHub, Rust, iOS, ChatGPT, ' +
+        'Linux, Postgres, Reddit, etc.) in their original form. Output ' +
+        'ONLY the translated Markdown — no preamble, no explanation, no ' +
+        'wrapping fence.',
+    },
+    {
+      role: 'user',
+      content:
+        `Source: ${item.source}\nOriginal title: ${item.title}\n` +
+        `Original URL: ${item.url}\n\n` +
+        `Article body (Markdown):\n\n${body}`,
+    },
+  ];
+  return await callLlm(cfg, prompt, tokens);
+}
+
+/**
  * Translate a foreign-language headline into a concise Simplified Chinese
  * version. Used for RSSHub items so an all-Chinese WeChat reader still
  * gets the gist at a glance. Proper nouns (GitHub, Rust, iOS, etc.) are

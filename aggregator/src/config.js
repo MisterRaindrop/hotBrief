@@ -66,6 +66,7 @@ function applyDefaults(cfg) {
   cfg.llm.model ??= 'deepseek-chat';
   cfg.llm.digest_max_tokens ??= 600;
   cfg.llm.tldr_max_tokens ??= 200;
+  cfg.llm.body_max_tokens ??= 4000;
 
   cfg.fulltext = cfg.fulltext || {};
   cfg.fulltext.reader_provider ??= 'jina';
@@ -162,6 +163,24 @@ function applyDefaults(cfg) {
     enable_summary: true,
     translate_foreign_titles: true,
     ...(cfg.digest || {}),
+  };
+
+  cfg.foreign_fulltext = {
+    enabled: true,
+    window_hours: 8,
+    body_max_chars: 6000,
+    message_max_chars: 28_000,
+    cooldown_hours: 24,
+    llm_concurrency: 3,
+    ...(cfg.foreign_fulltext || {}),
+  };
+
+  cfg.bookmark = {
+    enabled: false,
+    type: 'mailto',
+    mailto_address: '',
+    subject_prefix: '📚 hotBrief 收藏',
+    ...(cfg.bookmark || {}),
   };
 }
 

@@ -18,8 +18,13 @@ import { request } from 'undici';
 import { loadConfig, resolveSource } from './config.js';
 import { recentItems } from './db.js';
 import { applyKeywords } from './filter.js';
-import { filterUnpushed, markDigestPushed } from './dedup.js';
-import { summarizeForDigest, summarizeTldr, translateTitle } from './summarize.js';
+import { filterUnpushed, markDigestPushed, isForeignSource } from './dedup.js';
+import {
+  summarizeForDigest,
+  summarizeTldr,
+  translateTitle,
+  translateBody,
+} from './summarize.js';
 import { fetchMarkdown } from './fulltext.js';
 import 'dotenv/config';
 
@@ -88,12 +93,41 @@ const SOURCE_LABELS = {
 };
 
 /**
+ * Build the ServerChan title for a fulltext (重大热点) push. The title is
+ * what appears in the WeChat notification banner, so we surface the
+ * article headline. When a Chinese translation is available we lead with
+ * it (more glanceable for a Chinese-language reader) and append the
+ * original headline as a tail. Total length is capped at TITLE_MAX_CHARS
+ * to stay within ServerChan's title field and WeChat's preview width.
+ */
+const TITLE_MAX_CHARS = 96;
+function buildFulltextTitle(lead, titleZh) {
+  const prefix = '🔥 重大热点';
+  const original = String(lead?.title || '').trim();
+  const zh = String(titleZh || '').trim();
+
+  let combined;
+  if (zh && zh !== original) {
+    combined = `${prefix} · ${zh} | ${original}`;
+  } else if (original) {
+    combined = `${prefix} · ${original}`;
+  } else {
+    combined = prefix;
+  }
+  return truncate(combined, TITLE_MAX_CHARS);
+}
+
+function truncate(s, max) {
+  return s.length <= max ? s : s.slice(0, max - 1) + '…';
+}
+
+/**
  * Resolve the display label for a source ID. Lookup order:
  *   1. cfg.sourceLabels (user-defined, e.g. RSSHub feed labels)
  *   2. SOURCE_LABELS (built-in for known DailyHotApi IDs)
  *   3. Fallback: "📌 <id>"
  */
-function labelForSource(cfg, sourceId) {
+export function labelForSource(cfg, sourceId) {
   return cfg?.sourceLabels?.[sourceId]
     || SOURCE_LABELS[sourceId]
     || `📌 ${sourceId}`;
@@ -105,7 +139,41 @@ function labelForSource(cfg, sourceId) {
  *   12345  → "12k"
  *   1234567 → "1.2M"
  */
-function formatHot(n) {
+/**
+ * Build a `mailto:` bookmark link rendered as a Markdown anchor, or
+ * null when bookmarking is disabled in config.
+ *
+ * The mail composer is pre-filled with a subject identifying the article
+ * and a body containing title + URL + source attribution, so a single
+ * tap (in iOS Mail or any default mail handler) plus "send" lands the
+ * item in the user's own inbox as a persistent bookmark.
+ */
+export function bookmarkLink(cfg, item) {
+  const bm = cfg?.bookmark;
+  if (!bm || bm.enabled === false || bm.type !== 'mailto' || !bm.mailto_address) return null;
+
+  const prefix = bm.subject_prefix || '📚 hotBrief 收藏';
+  const subject = `${prefix}：${item.title}`;
+  const date = formatTime(new Date()).slice(0, 10);
+  const body =
+    `${item.title}\n${item.url}\n\n---\n` +
+    `来自 hotBrief · ${labelForSource(cfg, item.source)} · ${date}`;
+
+  const url = `mailto:${rfc3986(bm.mailto_address)}` +
+    `?subject=${rfc3986(subject)}` +
+    `&body=${rfc3986(body)}`;
+  return `[📧 收藏](${url})`;
+}
+
+/**
+ * encodeURIComponent leaves `+` alone, but mailto parsers are inconsistent
+ * about whether `+` means a literal space; force-escape to be safe.
+ */
+function rfc3986(s) {
+  return encodeURIComponent(String(s)).replace(/\+/g, '%2B');
+}
+
+export function formatHot(n) {
   const v = Number(n) || 0;
   if (v <= 0) return '';
   if (v < 1000) return String(v);
@@ -124,7 +192,11 @@ function formatHot(n) {
  */
 export async function pushDigest(cfg) {
   const all = recentItems(8 * 60);
-  const { kept } = applyKeywords(all, cfg.keywords);
+  // Foreign-language sources (RSSHub, direct RSS) flow through the dedicated
+  // per-source full-text channel (fullpush.js), so they are excluded here.
+  // The digest now contains only DailyHotApi items.
+  const localOnly = all.filter((it) => !isForeignSource(it));
+  const { kept } = applyKeywords(localOnly, cfg.keywords);
   const fresh = filterUnpushed(kept);
   if (fresh.length === 0) {
     console.log('[push] digest: no fresh items, skipping');
@@ -200,16 +272,22 @@ export async function pushDigest(cfg) {
 }
 
 /**
- * Render and push a single fulltext card for a major event or a whitelisted item.
+ * Render and push a single fulltext card for a major event or a whitelisted
+ * item. When the lead item comes from a foreign-language feed (RSSHub or
+ * direct RSS), title and body are translated to Simplified Chinese before
+ * render; otherwise the original Chinese content is used as-is.
  *
- * `cluster` may be either a Cluster object (from major.js) or a single item.
+ * `target` may be either a Cluster object (from major.js) or a single item.
  */
 export async function pushFulltext(cfg, target) {
   const lead = pickLeadItem(target);
   const platforms = collectPlatforms(target);
+  const foreign = isForeignSource(lead);
 
   let body = null;
   let tldr = null;
+  let titleZh = null;
+  let bodyZh = null;
 
   try {
     body = await fetchMarkdown(cfg, lead.url, cfg.fulltext.max_chars);
@@ -222,22 +300,55 @@ export async function pushFulltext(cfg, target) {
   }
 
   if (body) {
+    // TLDR works best on the original-language body — Chinese LLMs
+    // produce more grounded summaries from the source text.
     tldr = await summarizeTldr(cfg, lead, body);
   }
 
-  const title = `🔥 hotBrief 重大热点 · ${formatTime(new Date())}`;
-  const sections = [
-    `## ${lead.title}`,
-    '',
-    platforms.length > 1 ? `**多平台共振**：${platforms.join(' · ')}` : `**来源**：${lead.source}`,
-    '',
-  ];
+  if (foreign) {
+    try {
+      titleZh = await translateTitle(cfg, lead);
+    } catch (err) {
+      console.warn(`[push] title translation failed: ${err.message}`);
+    }
+    if (body) {
+      try {
+        bodyZh = await translateBody(cfg, lead, body);
+      } catch (err) {
+        console.warn(`[push] body translation failed: ${err.message}`);
+      }
+    }
+  }
+
+  // Server酱 title becomes the WeChat notification preview, so make it
+  // informative: show the article headline (and translation, when foreign)
+  // rather than just a generic "重大热点 · 时间" line.
+  const title = buildFulltextTitle(lead, titleZh);
+
+  const sections = [`## ${lead.title}`];
+  if (titleZh) sections.push('', `_${titleZh}_`);
+  sections.push('');
+
+  sections.push(
+    platforms.length > 1
+      ? `**多平台共振**：${platforms.join(' · ')}`
+      : `**来源**：${labelForSource(cfg, lead.source)}`,
+  );
+  const bm = bookmarkLink(cfg, lead);
+  if (bm) sections.push(`**收藏**：${bm}`);
+  sections.push('');
+
   if (tldr) sections.push(`**TLDR**：${tldr}`, '');
   sections.push('---', '');
-  if (body) {
-    sections.push(body);
+
+  // Prefer the translated body for foreign sources; fall back to the
+  // original body if translation failed; fall back to a stub if even
+  // the reader failed.
+  const renderBody = bodyZh || body;
+  if (renderBody) {
+    sections.push(renderBody);
   } else {
-    sections.push('（fulltext unavailable; see original article）');
+    sections.push('_（fulltext unavailable; see original article）_');
   }
   sections.push('', `🔗 完整原文：${lead.url}`);
 
@@ -385,7 +496,7 @@ function collectPlatforms(target) {
   return [target?.source].filter(Boolean);
 }
 
-function formatTime(d) {
+export function formatTime(d) {
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -431,7 +542,7 @@ export async function sendToServerChan(cfg, title, desp) {
   throw lastErr;
 }
 
-// CLI entry: node src/push.js --digest | --fulltext --url=<url>
+// CLI entry: node src/push.js --digest | --fulltext --url=<url> | --foreign-fulltext
 if (import.meta.url === `file://${process.argv[1]}`) {
   const argv = process.argv.slice(2);
   const cfg = loadConfig();
@@ -441,6 +552,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       console.error(e);
       process.exit(1);
     });
+  } else if (argv.includes('--foreign-fulltext')) {
+    // Lazy-import to avoid circular module load during digest-only runs.
+    import('./fullpush.js').then(({ pushForeignFulltext }) =>
+      pushForeignFulltext(cfg).catch((e) => {
+        console.error(e);
+        process.exit(1);
+      }),
+    );
   } else if (argv.includes('--fulltext')) {
     const urlArg = argv.find((a) => a.startsWith('--url='));
     if (!urlArg) {
@@ -453,7 +572,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       process.exit(1);
     });
   } else {
-    console.error('usage: node src/push.js --digest | --fulltext --url=<url>');
+    console.error('usage: node src/push.js --digest | --fulltext --url=<url> | --foreign-fulltext');
     process.exit(2);
   }
 }
