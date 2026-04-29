@@ -79,7 +79,7 @@ async function resolveEnabledSourceIds(cfg) {
 }
 
 async function discoverSources(cfg) {
-  const url = `${cfg.dailyhotapi.baseUrl}/`;
+  const url = `${cfg.dailyhotapi.baseUrl}/all`;
   const { statusCode, body } = await request(url, { method: 'GET', headersTimeout: REQUEST_TIMEOUT_MS });
   if (statusCode !== 200) throw new Error(`discovery http ${statusCode}`);
   const json = await body.json();
