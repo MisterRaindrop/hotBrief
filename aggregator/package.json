@@ -1,0 +1,25 @@
+{
+  "name": "hotbrief-aggregator",
+  "version": "0.1.0",
+  "description": "hotBrief aggregation service — fetches, filters, summarizes, and pushes news to WeChat via ServerChan.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "push:digest": "node src/push.js --digest",
+    "push:fulltext": "node src/push.js --fulltext"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.5.0",
+    "dotenv": "^16.4.5",
+    "fast-levenshtein": "^3.0.0",
+    "node-cron": "^3.0.3",
+    "openai": "^4.77.0",
+    "undici": "^6.21.0",
+    "yaml": "^2.6.1"
+  }
+}

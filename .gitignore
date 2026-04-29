@@ -1,0 +1,30 @@
+# Secrets and runtime config (copy from .example templates)
+.env
+config.yml
+
+# Runtime data (SQLite database, logs)
+data/
+*.log
+*.sqlite
+*.sqlite-journal
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/

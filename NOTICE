@@ -1,0 +1,50 @@
+hotBrief
+Copyright 2026 hotBrief contributors
+
+This product includes software developed by third parties, listed below.
+
+================================================================================
+DailyHotApi
+--------------------------------------------------------------------------------
+A self-hosted hot-list aggregation API for 30+ Chinese platforms.
+Source: https://github.com/imsyy/DailyHotApi
+License: MIT
+
+hotBrief consumes the DailyHotApi HTTP interface as an upstream data source.
+The DailyHotApi project itself is not bundled or modified; it is run as a
+separate Docker container.
+
+================================================================================
+Jina Reader (r.jina.ai)
+--------------------------------------------------------------------------------
+A free, hosted readability service that converts arbitrary URLs into clean
+Markdown. Used by hotBrief's fulltext lane to fetch article bodies.
+Source: https://github.com/jina-ai/reader
+License: Apache License 2.0
+
+hotBrief calls the public r.jina.ai endpoint as a third-party HTTP service;
+no source code is bundled.
+
+================================================================================
+ServerChan (Server酱)
+--------------------------------------------------------------------------------
+A WeChat push notification gateway service.
+Service: https://sct.ftqq.com
+
+hotBrief calls the ServerChan HTTPS API as a third-party push channel.
+
+================================================================================
+
+Portions of this software depend on the following open-source npm packages
+(see aggregator/package.json for the authoritative list and versions):
+
+  - node-cron        (ISC)
+  - better-sqlite3   (MIT)
+  - yaml             (ISC)
+  - undici           (MIT)
+  - fast-levenshtein (MIT)
+  - openai           (Apache-2.0)
+  - dotenv           (BSD-2-Clause)
+
+Each package retains its respective license; refer to the package's own
+LICENSE file in node_modules/ for full terms.

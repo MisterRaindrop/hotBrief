@@ -1,0 +1,96 @@
+# ============================================================================
+# hotBrief — runtime configuration
+# ----------------------------------------------------------------------------
+# Copy to config.yml and adjust. config.yml is gitignored.
+# Secrets (API keys) live in .env, NOT here.
+# ============================================================================
+
+llm:
+  # Provider name is informational only; actual auth is read from
+  # .env LLM_API_KEY and LLM_BASE_URL.
+  provider: "deepseek"
+  # Model identifier accepted by the chosen provider.
+  model: "deepseek-chat"
+  # Token budgets per call.
+  digest_max_tokens: 600
+  tldr_max_tokens: 200
+
+fulltext:
+  # 'jina' is the only built-in reader for now.
+  reader_provider: "jina"
+  # Fallback when fulltext fetch fails:
+  #   'link_only' — push title + original URL only
+  #   'skip'      — drop the item entirely
+  fallback: "link_only"
+  # Truncate fetched markdown above this many characters
+  # to stay well below ServerChan's 32KB single-message limit.
+  max_chars: 8000
+
+# === Source configuration ===
+sources:
+  defaults:
+    # Whether sources NOT listed in 'overrides' below are enabled by default.
+    enabled: true
+    # Default top-N items per source to include in the daily digest.
+    top_n: 3
+    # Default category bucket for unlisted sources.
+    category: "misc"
+    # Weight in major-event resonance counting (multiplier on 1 platform hit).
+    weight: 1
+
+  # Per-source overrides. Keys must match DailyHotApi source IDs;
+  # see https://github.com/imsyy/DailyHotApi for the authoritative list.
+  overrides:
+    hackernews:    { top_n: 10, category: "tech",   weight: 2 }
+    v2ex:          { top_n: 5,  category: "tech",   weight: 1 }
+    github:        { top_n: 5,  category: "tech",   weight: 2 }
+    juejin:        { top_n: 5,  category: "tech" }
+    ithome:        { top_n: 5,  category: "tech" }
+    zhihu:         { top_n: 5,  category: "social" }
+    weibo:         { top_n: 5,  category: "social" }
+    bilibili:      { top_n: 3,  category: "social" }
+    douban-movie:  { top_n: 3,  category: "social" }
+    toutiao:       { top_n: 5,  category: "news" }
+    thepaper:      { top_n: 5,  category: "news" }
+    # Explicitly disable a source by setting enabled: false, e.g.:
+    # douyin:      { enabled: false }
+
+# Display order and label for category buckets.
+# Labels are user-facing (shown in WeChat); customize freely.
+categories:
+  - { id: "tech",   label: "📱 Tech" }
+  - { id: "social", label: "💬 Social" }
+  - { id: "news",   label: "📰 News" }
+  - { id: "misc",   label: "🗂 Misc" }
+
+keywords:
+  # Items whose title contains any of these substrings are dropped
+  # (do not enter dedup table, do not appear in any push).
+  blacklist: []
+  # Items whose title matches any of these go to the fulltext lane
+  # and trigger a single-event push regardless of resonance count.
+  whitelist: []
+
+schedule:
+  # Cron expressions for daily-digest pushes (server local time).
+  daily_reports:
+    - "0 8 * * *"
+    - "0 12 * * *"
+    - "0 20 * * *"
+  # How often to fetch from DailyHotApi (minutes).
+  fetch_interval_min: 30
+
+major_event:
+  enabled: true
+  # Cluster size threshold: distinct platforms required for "major event".
+  min_platform_count: 3
+  # Do not re-push the same cluster within this many hours.
+  cooldown_hours: 24
+  # When true, sources.*.weight is applied to resonance counting.
+  apply_weight: true
+
+digest:
+  # Group items by categories[] order in the rendered Markdown.
+  group_by_category: true
+  # When false, skip LLM and emit titles only (zero LLM cost).
+  enable_summary: true
