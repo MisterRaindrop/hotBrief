@@ -17,6 +17,10 @@ services:
   aggregator:
     build:
       context: ./aggregator
+      # Mainland-China-friendly mirrors. Override or unset for upstream builds.
+      args:
+        APT_MIRROR: "http://mirrors.tuna.tsinghua.edu.cn"
+        NPM_REGISTRY: "https://registry.npmmirror.com"
     container_name: hotbrief-aggregator
     restart: unless-stopped
     depends_on:
