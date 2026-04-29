@@ -26,9 +26,93 @@ import 'dotenv/config';
 const SCT_ENDPOINT = (key) => `https://sctapi.ftqq.com/${key}.send`;
 const SCT_DESP_LIMIT = 32_000;
 
+// Display label and emoji for each known DailyHotApi source.
+// Unknown source IDs fall back to the raw ID with a generic icon.
+const SOURCE_LABELS = {
+  '36kr':            '🚀 36氪',
+  '51cto':           '💻 51CTO',
+  '52pojie':         '🛡 吾爱破解',
+  acfun:             '🌈 AcFun',
+  baidu:             '🔍 百度',
+  bilibili:          '📺 哔哩哔哩',
+  coolapk:           '📱 酷安',
+  csdn:              '🖥 CSDN',
+  dgtle:             '🎮 数字尾巴',
+  'douban-group':    '🎭 豆瓣小组',
+  'douban-movie':    '🎬 豆瓣电影',
+  douyin:            '🎵 抖音',
+  earthquake:        '🌍 地震速报',
+  gameres:           '🕹 游资网',
+  geekpark:          '💡 极客公园',
+  genshin:           '⛩ 原神',
+  github:            '🐙 GitHub Trending',
+  guokr:             '🐳 果壳',
+  hackernews:        '🟠 Hacker News',
+  hellogithub:       '⭐️ HelloGitHub',
+  history:           '📜 历史上的今天',
+  honkai:            '🚄 崩坏：星穹铁道',
+  hostloc:           '🌐 全球主机交流',
+  hupu:              '🏀 虎扑',
+  huxiu:             '🦁 虎嗅',
+  ifanr:             '🍎 爱范儿',
+  ithome:            '💻 IT之家',
+  'ithome-xijiayi':  '🎁 IT之家·喜加一',
+  jianshu:           '📓 简书',
+  juejin:            '💎 掘金',
+  kuaishou:          '🎥 快手',
+  linuxdo:           '🐧 Linux.do',
+  lol:               '🎮 英雄联盟',
+  miyoushe:          '🌸 米游社',
+  'netease-news':    '🟥 网易新闻',
+  newsmth:           '🎓 水木社区',
+  ngabbs:            '🎲 NGA',
+  nodeseek:          '🌳 NodeSeek',
+  nytimes:           '🗞 纽约时报',
+  producthunt:       '🚀 Product Hunt',
+  'qq-news':         '🐧 腾讯新闻',
+  sina:              '🌐 新浪',
+  'sina-news':       '🌐 新浪新闻',
+  smzdm:             '💰 什么值得买',
+  sspai:             '📦 少数派',
+  starrail:          '🌌 崩坏：星穹铁道',
+  thepaper:          '📰 澎湃新闻',
+  tieba:             '🎫 百度贴吧',
+  toutiao:           '📰 今日头条',
+  v2ex:              '💎 V2EX',
+  weatheralarm:      '⛈ 气象预警',
+  weibo:             '🔥 微博',
+  weread:            '📚 微信读书',
+  yystv:             '🎮 游研社',
+  zhihu:             '❓ 知乎',
+  'zhihu-daily':     '📅 知乎日报',
+};
+
+function labelForSource(sourceId) {
+  return SOURCE_LABELS[sourceId] || `📌 ${sourceId}`;
+}
+
+/**
+ * Format hot/score count into a compact human-readable badge.
+ *   1234   → "1.2k"
+ *   12345  → "12k"
+ *   1234567 → "1.2M"
+ */
+function formatHot(n) {
+  const v = Number(n) || 0;
+  if (v <= 0) return '';
+  if (v < 1000) return String(v);
+  if (v < 10_000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+  if (v < 1_000_000) return Math.round(v / 1000) + 'k';
+  return (v / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+}
+
 /**
  * Render and push a daily digest covering items collected since the
  * previous digest window (or last 8h, whichever is shorter).
+ *
+ * Layout: category → source → items. Items from the same source
+ * stay together; sources within a category are ordered by total
+ * activity (item count, then max hotness).
  */
 export async function pushDigest(cfg) {
   const all = recentItems(8 * 60);
@@ -39,20 +123,41 @@ export async function pushDigest(cfg) {
     return;
   }
 
-  const grouped = groupByCategory(cfg, fresh);
-  const sections = [];
+  const grouped = groupByCategoryAndSource(cfg, fresh);
+  const sourceCount = countSources(grouped);
+  const sections = [
+    `> 📰 **hotBrief** · ${formatTime(new Date())}`,
+    `> 共 **${fresh.length}** 条 · 来自 **${sourceCount}** 个来源`,
+    '',
+  ];
 
+  let firstCategory = true;
   for (const cat of cfg.categories) {
-    const items = grouped.get(cat.id);
-    if (!items || items.length === 0) continue;
-    sections.push(`## ${cat.label}`);
-    for (const item of items) {
-      const summary = cfg.digest.enable_summary
-        ? await summarizeForDigest(cfg, item)
-        : null;
-      sections.push(renderDigestItem(item, summary));
+    const sourceMap = grouped.get(cat.id);
+    if (!sourceMap || sourceMap.size === 0) continue;
+    if (!firstCategory) sections.push('---', '');
+    firstCategory = false;
+
+    const catTotal = totalItems(sourceMap);
+    sections.push(`## ${cat.label}  ·  ${catTotal} 条`, '');
+
+    for (const [sourceId, sourceItems] of sourceMap) {
+      sections.push(`### ${labelForSource(sourceId)}`, '');
+      for (let i = 0; i < sourceItems.length; i++) {
+        const item = sourceItems[i];
+        const hotBadge = formatHot(item.hot);
+        const hotSuffix = hotBadge ? `  · 🔥 ${hotBadge}` : '';
+        sections.push(`${i + 1}. [${item.title}](${item.url})${hotSuffix}`);
+
+        if (cfg.digest.enable_summary) {
+          const summary = await summarizeForDigest(cfg, item);
+          if (summary) {
+            sections.push('', `   > ${summary.replace(/\n+/g, '\n   > ')}`, '');
+          }
+        }
+      }
+      sections.push('');
     }
-    sections.push('');
   }
 
   const title = `📰 hotBrief 日报 · ${formatTime(new Date())}`;
@@ -61,7 +166,7 @@ export async function pushDigest(cfg) {
 
   await sendToServerChan(cfg, title, safe);
   markDigestPushed(fresh);
-  console.log(`[push] digest: sent ${fresh.length} items`);
+  console.log(`[push] digest: sent ${fresh.length} items from ${sourceCount} sources`);
 }
 
 /**
@@ -111,42 +216,57 @@ export async function pushFulltext(cfg, target) {
   console.log(`[push] fulltext: sent "${lead.title}"`);
 }
 
-function renderDigestItem(item, summary) {
-  const head = `### ${item.title} [${item.source}]`;
-  const tail = `🔗 [原文](${item.url})`;
-  return summary ? `${head}\n${summary}\n${tail}\n` : `${head}\n${tail}\n`;
-}
-
-function groupByCategory(cfg, items) {
+/**
+ * Group items first by category (per cfg.categories order) and then by
+ * source within each category. Returns a Map<categoryId, Map<sourceId, items[]>>.
+ *
+ * Within each (category, source) bucket, items are sorted by hot desc and
+ * truncated to that source's top_n. Sources within a category are ordered
+ * by item count desc, then by max hot desc.
+ */
+function groupByCategoryAndSource(cfg, items) {
   const out = new Map();
-  for (const cat of cfg.categories) out.set(cat.id, []);
+  for (const cat of cfg.categories) out.set(cat.id, new Map());
 
   for (const item of items) {
     const settings = item._settings || resolveSource(cfg, item.source);
     const catId = settings.category || 'misc';
-    if (!out.has(catId)) out.set(catId, []);
-    out.get(catId).push({ ...item, _settings: settings });
+    if (!out.has(catId)) out.set(catId, new Map());
+    const bySource = out.get(catId);
+    if (!bySource.has(item.source)) bySource.set(item.source, []);
+    bySource.get(item.source).push({ ...item, _settings: settings });
   }
 
-  // Sort within each category by hot desc, then truncate to per-source top_n.
-  for (const [catId, list] of out) {
-    list.sort((a, b) => (b.hot || 0) - (a.hot || 0));
-    out.set(catId, capPerSource(list));
+  for (const [catId, bySource] of out) {
+    for (const [sid, list] of bySource) {
+      list.sort((a, b) => (b.hot || 0) - (a.hot || 0));
+      const cap = list[0]?._settings?.top_n ?? 3;
+      bySource.set(sid, list.slice(0, cap));
+    }
+    // Order sources within the category: most items first, then highest peak hot.
+    const ordered = Array.from(bySource.entries()).sort((a, b) => {
+      const aCount = a[1].length;
+      const bCount = b[1].length;
+      if (bCount !== aCount) return bCount - aCount;
+      const aPeak = a[1][0]?.hot || 0;
+      const bPeak = b[1][0]?.hot || 0;
+      return bPeak - aPeak;
+    });
+    out.set(catId, new Map(ordered));
   }
   return out;
 }
 
-function capPerSource(list) {
-  const seen = new Map();
-  const result = [];
-  for (const it of list) {
-    const cap = it._settings?.top_n ?? 3;
-    const n = seen.get(it.source) || 0;
-    if (n >= cap) continue;
-    seen.set(it.source, n + 1);
-    result.push(it);
-  }
-  return result;
+function totalItems(sourceMap) {
+  let n = 0;
+  for (const list of sourceMap.values()) n += list.length;
+  return n;
+}
+
+function countSources(grouped) {
+  let n = 0;
+  for (const sourceMap of grouped.values()) n += sourceMap.size;
+  return n;
 }
 
 function pickLeadItem(target) {
