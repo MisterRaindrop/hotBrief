@@ -1,4 +1,28 @@
 services:
+  # RSSHub: foreign-feed adapter (Stage 3). Disabled by default;
+  # enable by setting `rsshub.enabled: true` in config.yml AND including
+  # this service in `docker compose up` (it always starts but the
+  # aggregator only consumes it when configured).
+  #
+  # If RSSHub needs to reach blocked sites, set RSSHUB_PROXY_URI in .env
+  # (e.g. http://host.docker.internal:1080 on Docker Desktop, or the
+  # IP/port of an HTTP proxy reachable from the docker bridge).
+  rsshub:
+    image: diygod/rsshub:latest
+    container_name: hotbrief-rsshub
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: memory
+      CACHE_EXPIRE: "300"
+      PROXY_URI: "${RSSHUB_PROXY_URI:-}"
+      TZ: "Asia/Shanghai"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:1200/healthz >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   dailyhotapi:
     image: imsyy/dailyhot-api:latest
     container_name: hotbrief-dailyhotapi
@@ -26,6 +50,8 @@ services:
     depends_on:
       dailyhotapi:
         condition: service_started
+      rsshub:
+        condition: service_started
     env_file:
       - .env
     environment:
@@ -33,6 +59,7 @@ services:
       CONFIG_PATH: "/app/config.yml"
       DATA_DIR: "/app/data"
       TZ: "Asia/Shanghai"
+      FOREIGN_HTTPS_PROXY: "${FOREIGN_HTTPS_PROXY:-}"
     volumes:
       - ./config.yml:/app/config.yml:ro
       - ./data:/app/data

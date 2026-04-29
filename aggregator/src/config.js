@@ -82,6 +82,58 @@ function applyDefaults(cfg) {
   };
   cfg.sources.overrides = cfg.sources.overrides || {};
 
+  // RSSHub block. Each feed becomes a virtual source that downstream
+  // pipeline stages (filter, dedup, group, push) treat the same way as
+  // a DailyHotApi source. The fetch stage dispatches by provider.
+  cfg.rsshub = cfg.rsshub || {};
+  cfg.rsshub.enabled ??= false;
+  cfg.rsshub.base_url ??= 'http://rsshub:1200';
+  cfg.rsshub.feeds = Array.isArray(cfg.rsshub.feeds) ? cfg.rsshub.feeds : [];
+
+  // Per-source label map. Built from DailyHotApi defaults (in push.js)
+  // overlaid with rsshub feed labels here.
+  cfg.sourceLabels = cfg.sourceLabels || {};
+
+  if (cfg.rsshub.enabled) {
+    for (const feed of cfg.rsshub.feeds) {
+      if (!feed?.id) continue;
+      // Inject feed metadata so resolveSource() works downstream.
+      if (!cfg.sources.overrides[feed.id]) {
+        cfg.sources.overrides[feed.id] = {
+          enabled: feed.enabled ?? true,
+          top_n: feed.top_n,
+          category: feed.category,
+          weight: feed.weight,
+        };
+      }
+      if (feed.label) cfg.sourceLabels[feed.id] = feed.label;
+    }
+  }
+
+  // Generic RSS block. Each entry takes a direct RSS/Atom URL — useful for
+  // feeds that RSSHub does not (yet) provide a curated route for: Reddit
+  // (.rss endpoints), Medium tag feeds, Substack newsletters, official
+  // project blogs, etc. Foreign URLs typically need FOREIGN_HTTPS_PROXY set
+  // on the aggregator container.
+  cfg.rss = cfg.rss || {};
+  cfg.rss.enabled ??= false;
+  cfg.rss.feeds = Array.isArray(cfg.rss.feeds) ? cfg.rss.feeds : [];
+
+  if (cfg.rss.enabled) {
+    for (const feed of cfg.rss.feeds) {
+      if (!feed?.id) continue;
+      if (!cfg.sources.overrides[feed.id]) {
+        cfg.sources.overrides[feed.id] = {
+          enabled: feed.enabled ?? true,
+          top_n: feed.top_n,
+          category: feed.category,
+          weight: feed.weight,
+        };
+      }
+      if (feed.label) cfg.sourceLabels[feed.id] = feed.label;
+    }
+  }
+
   cfg.categories ??= [
     { id: 'tech', label: '📱 Tech' },
     { id: 'social', label: '💬 Social' },
@@ -108,6 +160,7 @@ function applyDefaults(cfg) {
   cfg.digest = {
     group_by_category: true,
     enable_summary: true,
+    translate_foreign_titles: true,
     ...(cfg.digest || {}),
   };
 }

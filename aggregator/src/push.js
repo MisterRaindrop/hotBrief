@@ -19,7 +19,7 @@ import { loadConfig, resolveSource } from './config.js';
 import { recentItems } from './db.js';
 import { applyKeywords } from './filter.js';
 import { filterUnpushed, markDigestPushed } from './dedup.js';
-import { summarizeForDigest, summarizeTldr } from './summarize.js';
+import { summarizeForDigest, summarizeTldr, translateTitle } from './summarize.js';
 import { fetchMarkdown } from './fulltext.js';
 import 'dotenv/config';
 
@@ -87,8 +87,16 @@ const SOURCE_LABELS = {
   'zhihu-daily':     '📅 知乎日报',
 };
 
-function labelForSource(sourceId) {
-  return SOURCE_LABELS[sourceId] || `📌 ${sourceId}`;
+/**
+ * Resolve the display label for a source ID. Lookup order:
+ *   1. cfg.sourceLabels (user-defined, e.g. RSSHub feed labels)
+ *   2. SOURCE_LABELS (built-in for known DailyHotApi IDs)
+ *   3. Fallback: "📌 <id>"
+ */
+function labelForSource(cfg, sourceId) {
+  return cfg?.sourceLabels?.[sourceId]
+    || SOURCE_LABELS[sourceId]
+    || `📌 ${sourceId}`;
 }
 
 /**
@@ -126,8 +134,13 @@ export async function pushDigest(cfg) {
   const grouped = groupByCategoryAndSource(cfg, fresh);
   const sourceCount = countSources(grouped);
 
-  // Pre-compute summaries in parallel batches so 100+ item digests don't
-  // serialize behind LLM latency. Items keep their summary on `_summary`.
+  // Pre-compute LLM-derived fields in parallel batches so 100+ item
+  // digests don't serialize behind LLM latency.
+  // - _translated: zh translation of foreign-language headlines (RSSHub items)
+  // - _summary:    short Chinese teaser, when enable_summary is true
+  if (cfg.digest.translate_foreign_titles !== false) {
+    await populateTranslations(cfg, grouped, 5);
+  }
   if (cfg.digest.enable_summary) {
     await populateSummaries(cfg, grouped, 5);
   }
@@ -149,15 +162,29 @@ export async function pushDigest(cfg) {
     sections.push(`## ${cat.label}  ·  ${catTotal} 条`, '');
 
     for (const [sourceId, sourceItems] of sourceMap) {
-      sections.push(`### ${labelForSource(sourceId)}`, '');
+      sections.push(`### ${labelForSource(cfg, sourceId)}`, '');
       for (let i = 0; i < sourceItems.length; i++) {
         const item = sourceItems[i];
         const hotBadge = formatHot(item.hot);
         const hotSuffix = hotBadge ? `  · 🔥 ${hotBadge}` : '';
+
+        // Original title is the primary linked text.
         sections.push(`${i + 1}. [${item.title}](${item.url})${hotSuffix}`);
-        if (item._summary) {
-          sections.push('', `   > ${item._summary.replace(/\n+/g, '\n   > ')}`, '');
+
+        // For foreign-language items, the Chinese translation appears on
+        // its own paragraph below the title. Inline subtitle attempts get
+        // collapsed by some Markdown renderers (notably WeChat); a blank
+        // line ensures a real visual break.
+        if (item._translated) {
+          sections.push('', `   ${item._translated}`);
         }
+
+        // Summary, if enabled, sits below as an indented blockquote.
+        if (item._summary) {
+          sections.push('', `   > ${item._summary.replace(/\n+/g, '\n   > ')}`);
+        }
+
+        sections.push('');
       }
       sections.push('');
     }
@@ -258,6 +285,49 @@ function groupByCategoryAndSource(cfg, items) {
     out.set(catId, new Map(ordered));
   }
   return out;
+}
+
+/**
+ * Translate foreign-language headlines into Simplified Chinese with a
+ * fixed concurrency limit. Stores the translation on `item._translated`.
+ *
+ * Selection: items whose source ID starts with `rsshub-` AND whose title
+ * has fewer than 4 CJK characters (a crude "looks foreign" heuristic).
+ */
+async function populateTranslations(cfg, grouped, concurrency = 5) {
+  const queue = [];
+  for (const sourceMap of grouped.values()) {
+    for (const list of sourceMap.values()) {
+      for (const item of list) {
+        if (shouldTranslate(item)) queue.push(item);
+      }
+    }
+  }
+  if (queue.length === 0) return;
+
+  const t0 = Date.now();
+  const total = queue.length;
+
+  const worker = async () => {
+    while (queue.length > 0) {
+      const item = queue.shift();
+      try {
+        item._translated = await translateTitle(cfg, item);
+      } catch (err) {
+        console.warn(`[push] translation failed for "${item.title}": ${err.message}`);
+        item._translated = null;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  console.log(`[push] translated ${total} foreign titles in ${Date.now() - t0}ms`);
+}
+
+function shouldTranslate(item) {
+  const src = String(item.source);
+  if (!src.startsWith('rsshub-') && !src.startsWith('rss-')) return false;
+  const cjk = (item.title.match(/[一-鿿]/g) || []).length;
+  return cjk < 4;
 }
 
 /**

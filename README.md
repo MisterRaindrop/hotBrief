@@ -5,10 +5,15 @@
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://docs.docker.com/)
 
 A self-hosted news aggregator that delivers a daily LLM-powered digest and
-real-time major-event alerts to your WeChat via [ServerChan](https://sct.ftqq.com),
-backed by [imsyy/DailyHotApi](https://github.com/imsyy/DailyHotApi) for
-30+ Chinese platforms (Hacker News, V2EX, Zhihu, Weibo, Bilibili, GitHub
-Trending, IT之家, …).
+real-time major-event alerts to your WeChat via [ServerChan](https://sct.ftqq.com).
+Pulls from two providers and unifies them into one ranked, deduplicated feed:
+
+- **[imsyy/DailyHotApi](https://github.com/imsyy/DailyHotApi)** — 30+ Chinese
+  platforms (Hacker News, V2EX, Zhihu, Weibo, Bilibili, GitHub Trending,
+  IT之家, …).
+- **[DIYgod/RSSHub](https://github.com/DIYgod/RSSHub)** — thousands of foreign
+  routes (Reddit, Lobsters, Mastodon, Hacker News raw, Substack, Twitter via
+  Nitter, YouTube channels, …). Configure feeds in `config.yml`.
 
 ## Why
 
@@ -118,10 +123,11 @@ aggregator/src/
 
 ## Roadmap
 
-- **Stage 1.0** *(this release)* — ServerChan WeChat push, no frontend
+- **Stage 1.0** *(shipped)* — ServerChan WeChat push, two-lane digest/fulltext
 - **Stage 1.5** — PWA browse UI behind a Cloudflare Tunnel; read/star state
 - **Stage 2** — Native iOS App (SwiftUI) reusing the same backend API
-- **Stage 3** — Reddit, Hacker News, Twitter via offshore relay
+- **Stage 3** *(shipped)* — RSSHub adapter for foreign feeds (Reddit, Lobsters,
+  Mastodon, Substack, …). Configure in `rsshub:` block of `config.yml`
 
 ## Contributing
 

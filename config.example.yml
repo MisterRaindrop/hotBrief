@@ -55,6 +55,315 @@ sources:
     # Explicitly disable a source by setting enabled: false, e.g.:
     # douyin:      { enabled: false }
 
+# === RSSHub (Stage 3): pull foreign feeds via a self-hosted RSSHub
+#
+# Each feed below becomes a virtual source on top of the unified pipeline:
+# filter, dedup, group, push all treat it the same as a DailyHotApi source.
+#
+# `path` is a RSSHub route (without ?format=json — that is appended automatically).
+# `id` is the source ID stored in the database and in dedup keys; pick a
+# stable, dash-separated identifier.
+# `label` overrides the default display label in push output (optional).
+#
+# RSSHub itself runs as a separate container; routes that hit foreign sites
+# (Reddit, HN, Lobsters, …) typically need outbound proxy access from the
+# RSSHub container. See PROXY_URI in the RSSHub docs and docker-compose.yml.
+rsshub:
+  enabled: false              # set to true after the rsshub container is running
+  base_url: "http://rsshub:1200"
+
+  feeds:
+    # ── Hacker News ──────────────────────────────────────────
+    # Most reliable RSSHub source; uses the official Firebase API.
+    - id: "rsshub-hn"
+      path: "/hackernews"
+      label: "🟠 Hacker News"
+      top_n: 10
+      category: "tech"
+      weight: 2
+
+    - id: "rsshub-hn-best"
+      path: "/hackernews/best"
+      label: "🟠 HN Best"
+      top_n: 5
+      category: "tech"
+      weight: 1
+
+    - id: "rsshub-hn-show"
+      path: "/hackernews/show"
+      label: "🟠 HN Show"
+      top_n: 5
+      category: "tech"
+      weight: 1
+
+    # ── AI / ML ──────────────────────────────────────────────
+    # Curated AI labs and research-paper sources.
+    - id: "rsshub-hf-papers"
+      path: "/huggingface/daily-papers"
+      label: "🤗 HF Daily Papers"
+      top_n: 5
+      category: "tech"
+      weight: 2
+
+    - id: "rsshub-hf-blog"
+      path: "/huggingface/blog"
+      label: "🤗 HF Blog"
+      top_n: 3
+      category: "tech"
+      weight: 1
+
+    - id: "rsshub-anthropic-news"
+      path: "/anthropic/news"
+      label: "🤖 Anthropic"
+      top_n: 5
+      category: "tech"
+      weight: 2
+
+    - id: "rsshub-openai-news"
+      path: "/openai/news"
+      label: "🌀 OpenAI News"
+      top_n: 5
+      category: "tech"
+      weight: 2
+
+    - id: "rsshub-openai-research"
+      path: "/openai/research"
+      label: "🌀 OpenAI Research"
+      top_n: 5
+      category: "tech"
+      weight: 1
+
+    - id: "rsshub-deepmind"
+      path: "/deepmind/blog"
+      label: "🟣 DeepMind"
+      top_n: 5
+      category: "tech"
+      weight: 1
+
+    - id: "rsshub-google-research"
+      path: "/google/research"
+      label: "🔵 Google Research"
+      top_n: 5
+      category: "tech"
+      weight: 1
+
+    - id: "rsshub-wired-ai"
+      path: "/wired/tag/artificial-intelligence"
+      label: "🌀 Wired AI"
+      top_n: 3
+      category: "tech"
+      weight: 1
+
+    # ── Database / Data engineering ──────────────────────────
+    # Postgres and big-data routes are not yet broadly supported in RSSHub
+    # 1.0.0. Try the routes below first and uncomment those that return
+    # data on your install (newer RSSHub builds / community forks add more).
+    # In the meantime, follow these via DailyHotApi (juejin / ithome carry
+    # frequent posts) or wait for the upcoming "direct RSS URL" feature.
+    #
+    # - id: "rsshub-pg-news"
+    #   path: "/postgresql/news"
+    #   label: "🐘 PostgreSQL"
+    #   top_n: 5
+    #   category: "tech"
+    #
+    # - id: "rsshub-data-eng-weekly"
+    #   path: "/dataengineeringweekly"
+    #   label: "📊 Data Engineering Weekly"
+    #   top_n: 3
+    #   category: "tech"
+
+    # ── Foreign social ──────────────────────────────────────
+    # Reddit and Lobsters routes were broken in RSSHub 1.0.0 at the time
+    # of writing; uncomment after testing on your install.
+    #
+    # - id: "rsshub-lobsters"
+    #   path: "/lobsters/hottest"
+    #   label: "🦞 Lobsters"
+    #   top_n: 5
+    #   category: "tech"
+    #
+    # - id: "rsshub-reddit-programming"
+    #   path: "/reddit/r/programming/hot"
+    #   label: "🟧 r/programming"
+    #   top_n: 5
+    #   category: "tech"
+    #
+    # - id: "rsshub-mastodon-trending"
+    #   path: "/mastodon/timeline/mastodon.social"
+    #   label: "🐘 Mastodon"
+    #   top_n: 5
+    #   category: "social"
+
+# === Direct RSS / Atom feeds (Stage 3 cont.)
+#
+# Subscribe to any RSS or Atom URL directly. Use this for Reddit subs,
+# Medium tags, Substack newsletters, and project blogs that RSSHub does
+# not provide a curated route for. IDs MUST start with "rss-" so that
+# downstream translation and filtering treat them as foreign sources.
+#
+# Many of these are foreign-hosted; set FOREIGN_HTTPS_PROXY in .env if
+# the aggregator container needs an outbound proxy to reach them.
+rss:
+  enabled: false              # set to true to activate RSS subscriptions
+  feeds:
+    # ── Postgres ────────────────────────────────────────────
+    - id: "rss-planet-postgres"
+      url: "https://planet.postgresql.org/rss20.xml"
+      label: "🐘 Planet PostgreSQL"
+      top_n: 5
+      category: "tech"
+      weight: 2
+
+    - id: "rss-citus-blog"
+      url: "https://www.citusdata.com/feed.xml"
+      label: "🐘 Citus Data"
+      top_n: 3
+      category: "tech"
+      weight: 1
+
+    - id: "rss-crunchy-data"
+      url: "https://www.crunchydata.com/blog/rss.xml"
+      label: "🐘 Crunchy Data"
+      top_n: 3
+      category: "tech"
+      weight: 1
+
+    # Postgres official news and pganalyze blog have unstable RSS endpoints
+    # at the time of writing; uncomment after verifying:
+    # - id: "rss-postgresql-news"
+    #   url: "https://www.postgresql.org/news.atom"
+    # - id: "rss-pganalyze"
+    #   url: "https://pganalyze.com/blog.rss"
+
+    # ── Big data / Data engineering ─────────────────────────
+    - id: "rss-aws-bigdata"
+      url: "https://aws.amazon.com/blogs/big-data/feed/"
+      label: "📊 AWS Big Data"
+      top_n: 3
+      category: "tech"
+      weight: 1
+
+    - id: "rss-databricks"
+      url: "https://www.databricks.com/feed"
+      label: "📊 Databricks"
+      top_n: 3
+      category: "tech"
+      weight: 1
+
+    # Confluent's RSS endpoint is unstable; uncomment when you find
+    # a working URL on your install:
+    # - id: "rss-confluent"
+    #   url: "https://www.confluent.io/blog/feed/"
+    #   label: "📊 Confluent"
+
+    - id: "rss-data-eng-weekly"
+      url: "https://www.dataengineeringweekly.com/feed"
+      label: "📊 Data Engineering Weekly"
+      top_n: 3
+      category: "tech"
+      weight: 1
+
+    - id: "rss-netflix-tech"
+      url: "https://medium.com/feed/netflix-techblog"
+      label: "📊 Netflix Tech"
+      top_n: 3
+      category: "tech"
+      weight: 1
+
+    # ── AI / ML ─────────────────────────────────────────────
+    - id: "rss-deepmind-blog"
+      url: "https://deepmind.google/blog/rss.xml"
+      label: "🟣 DeepMind"
+      top_n: 3
+      category: "tech"
+      weight: 1
+
+    # DeepLearning.AI's "The Batch" RSS endpoint is unstable; uncomment
+    # when you find a working URL on your install:
+    # - id: "rss-the-batch"
+    #   url: "https://www.deeplearning.ai/the-batch/feed/"
+    #   label: "🤖 The Batch (Andrew Ng)"
+
+    - id: "rss-import-ai"
+      url: "https://importai.substack.com/feed"
+      label: "🤖 Import AI"
+      top_n: 3
+      category: "tech"
+      weight: 1
+
+    - id: "rss-last-week-ai"
+      url: "https://lastweekin.ai/feed"
+      label: "🤖 Last Week in AI"
+      top_n: 3
+      category: "tech"
+      weight: 1
+
+    - id: "rss-lilianweng"
+      url: "https://lilianweng.github.io/index.xml"
+      label: "🤖 Lil'Log (Lilian Weng)"
+      top_n: 3
+      category: "tech"
+      weight: 1
+
+    - id: "rss-sebastian-raschka"
+      url: "https://magazine.sebastianraschka.com/feed"
+      label: "🤖 Sebastian Raschka"
+      top_n: 3
+      category: "tech"
+      weight: 1
+
+    # ── Reddit subreddits (RSS endpoints; user-agent + proxy required) ──
+    - id: "rss-reddit-postgres"
+      url: "https://www.reddit.com/r/PostgreSQL/.rss"
+      label: "🟧 r/PostgreSQL"
+      top_n: 5
+      category: "tech"
+      weight: 1
+
+    - id: "rss-reddit-dataeng"
+      url: "https://www.reddit.com/r/dataengineering/.rss"
+      label: "🟧 r/dataengineering"
+      top_n: 5
+      category: "tech"
+      weight: 1
+
+    - id: "rss-reddit-ml"
+      url: "https://www.reddit.com/r/MachineLearning/.rss"
+      label: "🟧 r/MachineLearning"
+      top_n: 5
+      category: "tech"
+      weight: 1
+
+    - id: "rss-reddit-localllama"
+      url: "https://www.reddit.com/r/LocalLLaMA/.rss"
+      label: "🟧 r/LocalLLaMA"
+      top_n: 5
+      category: "tech"
+      weight: 1
+
+    # ── Medium tag feeds (cloudflare may rate-limit) ────────
+    - id: "rss-medium-postgres"
+      url: "https://medium.com/feed/tag/postgresql"
+      label: "📘 Medium · Postgres"
+      top_n: 3
+      category: "tech"
+      weight: 1
+
+    - id: "rss-medium-dataeng"
+      url: "https://medium.com/feed/tag/data-engineering"
+      label: "📘 Medium · Data Engineering"
+      top_n: 3
+      category: "tech"
+      weight: 1
+
+    - id: "rss-medium-ml"
+      url: "https://medium.com/feed/tag/machine-learning"
+      label: "📘 Medium · Machine Learning"
+      top_n: 3
+      category: "tech"
+      weight: 1
+
 # Display order and label for category buckets.
 # Labels are user-facing (shown in WeChat); customize freely.
 categories:
@@ -92,5 +401,8 @@ major_event:
 digest:
   # Group items by categories[] order in the rendered Markdown.
   group_by_category: true
-  # When false, skip LLM and emit titles only (zero LLM cost).
+  # When false, skip LLM teaser and emit titles only (zero LLM cost).
   enable_summary: true
+  # Translate foreign-language (non-CJK) headlines to Simplified Chinese
+  # for RSSHub items. The original headline is kept as an italic subtitle.
+  translate_foreign_titles: true

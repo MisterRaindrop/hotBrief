@@ -44,6 +44,33 @@ export async function summarizeForDigest(cfg, item) {
 }
 
 /**
+ * Translate a foreign-language headline into a concise Simplified Chinese
+ * version. Used for RSSHub items so an all-Chinese WeChat reader still
+ * gets the gist at a glance. Proper nouns (GitHub, Rust, iOS, etc.) are
+ * preserved.
+ *
+ * Returns the Chinese translation, or null on LLM failure.
+ */
+export async function translateTitle(cfg, item) {
+  const prompt = [
+    {
+      role: 'system',
+      content:
+        'You translate foreign-language news headlines into concise Simplified Chinese. ' +
+        'Output ONLY the Chinese translation, no quotes, no explanation, no markdown. ' +
+        'Keep brand names, product names, and technology terms (GitHub, Rust, iOS, ChatGPT, ' +
+        'Linux, etc.) in their original form.',
+    },
+    {
+      role: 'user',
+      content:
+        `Translate this headline to Simplified Chinese, 10-30 characters, faithful to the original meaning:\n\n${item.title}`,
+    },
+  ];
+  return await callLlm(cfg, prompt, 120);
+}
+
+/**
  * Generate a short TLDR (~100 chars Chinese) for a major-event cluster.
  */
 export async function summarizeTldr(cfg, item, body) {
