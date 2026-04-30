@@ -17,11 +17,18 @@ services:
       CACHE_EXPIRE: "300"
       PROXY_URI: "${RSSHUB_PROXY_URI:-}"
       TZ: "Asia/Shanghai"
+    # Use a node-based healthcheck because the upstream image's busybox
+    # wget behaves inconsistently across versions; node is always present.
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:1200/healthz >/dev/null || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "require('http').get('http://127.0.0.1:1200/healthz', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
 
   dailyhotapi:
     image: imsyy/dailyhot-api:latest
@@ -33,10 +40,15 @@ services:
     ports:
       - "127.0.0.1:6688:6688"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:6688/ >/dev/null || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "require('http').get('http://127.0.0.1:6688/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
 
   aggregator:
     build:
@@ -49,9 +61,9 @@ services:
     restart: unless-stopped
     depends_on:
       dailyhotapi:
-        condition: service_started
+        condition: service_healthy
       rsshub:
-        condition: service_started
+        condition: service_healthy
     env_file:
       - .env
     environment:

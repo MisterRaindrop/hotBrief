@@ -55,18 +55,21 @@ Pulls from two providers and unifies them into one ranked, deduplicated feed:
                                           WeChat → iPhone
 ```
 
-## Quick Start
+## Quick Start (one-shot deploy)
 
 ```bash
 git clone https://github.com/<you>/hotBrief.git
 cd hotBrief
 make setup            # copies .env.example -> .env, config.example.yml -> config.yml
 $EDITOR .env          # fill in SERVERCHAN_SCT_KEY, LLM_API_KEY, LLM_BASE_URL
-$EDITOR config.yml    # tune sources, schedule, keywords
-make start            # docker compose up -d
-make logs             # tail aggregator output
-make test             # send a one-shot digest push
+                      # (and optional FOREIGN_HTTPS_PROXY / RSSHUB_PROXY_URI)
+make up               # validate config, build image, start stack, tail aggregator logs
 ```
+
+`make up` chains `doctor → build → start → logs`. After containers are healthy
+the cron-driven schedule takes over (default 8 / 12 / 20 daily). For a
+one-shot verification push, `make test` (digest) or `make test-foreign`
+(per-source full-text).
 
 ## Configuration
 
@@ -157,18 +160,20 @@ Apache License 2.0 — see [LICENSE](LICENSE) and third-party attributions in [N
 
 见上文 English 段的 Architecture 图。
 
-## 快速开始
+## 快速开始（一键部署）
 
 ```bash
 git clone https://github.com/<你>/hotBrief.git
 cd hotBrief
 make setup            # 自动复制 .env.example、config.example.yml
 $EDITOR .env          # 填入 SERVERCHAN_SCT_KEY、LLM_API_KEY、LLM_BASE_URL
-$EDITOR config.yml    # 按需调整源、时间表、关键词
-make start            # 启动
-make logs             # 看日志
-make test             # 立刻发一条测试日报
+                      # 国内服务器若需要外网访问，可填 FOREIGN_HTTPS_PROXY / RSSHUB_PROXY_URI
+make up               # 自检 → 构建镜像 → 启动 → 跟随 aggregator 日志
 ```
+
+`make up` 串起 `doctor → build → start → logs` 四步。容器 healthy 后
+cron 调度接管（默认 8 / 12 / 20 三个时间）。手动验证：`make test`（日报）
+或 `make test-foreign`（按源全文）。
 
 ## 配置说明
 
