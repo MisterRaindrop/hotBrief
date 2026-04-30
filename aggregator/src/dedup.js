@@ -74,14 +74,6 @@ export function fulltextKey(item) {
   return `${KIND_FULLTEXT}:item:${item.source}:${normalize(item.title)}`;
 }
 
-/**
- * Legacy alias retained for callers that pre-date the kind-prefixed keys.
- * Equivalent to `digestKey(item)`.
- */
-export function itemKey(item) {
-  return digestKey(item);
-}
-
 // ───────────── Source classification ─────────────
 
 /**

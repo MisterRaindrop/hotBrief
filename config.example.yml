@@ -414,12 +414,9 @@ digest:
   group_by_category: true
   # When false, skip LLM teaser and emit titles only (zero LLM cost).
   enable_summary: true
-  # Translate foreign-language (non-CJK) headlines to Simplified Chinese
-  # for any RSSHub/RSS items that still appear in the digest. With the
-  # foreign-fulltext channel enabled, foreign items normally do NOT appear
-  # in the digest at all (they are pushed separately full-text), but this
-  # remains useful as a safety net.
-  translate_foreign_titles: true
+  # Note: foreign-language items (rsshub-* and rss-*) are routed to the
+  # dedicated foreign-fulltext channel below, not the digest. The digest
+  # therefore only contains DailyHotApi (Chinese platform) items.
 
 # === Per-source full-text push for foreign feeds (RSSHub + direct RSS) ===
 #

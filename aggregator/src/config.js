@@ -161,7 +161,6 @@ function applyDefaults(cfg) {
   cfg.digest = {
     group_by_category: true,
     enable_summary: true,
-    translate_foreign_titles: true,
     ...(cfg.digest || {}),
   };
 
