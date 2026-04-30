@@ -29,6 +29,7 @@ import {
   formatHot,
   formatTime,
   bookmarkLink,
+  bookmarkBlock,
 } from './push.js';
 
 const SCT_DESP_LIMIT = 32_000;
@@ -172,11 +173,11 @@ export function renderCard(cfg, item) {
   lines.push('');
 
   const hot = formatHot(item.hot);
-  const meta = [];
-  if (hot) meta.push(`🔥 ${hot}`);
-  const bookmark = bookmarkLink(cfg, item);
-  if (bookmark) meta.push(bookmark);
-  if (meta.length > 0) lines.push(`> ${meta.join(' · ')}`, '');
+  const metaParts = [];
+  if (hot) metaParts.push(`🔥 ${hot}`);
+  const inlineLink = bookmarkLink(cfg, item);
+  if (inlineLink) metaParts.push(inlineLink);
+  if (metaParts.length > 0) lines.push(`> ${metaParts.join(' · ')}`, '');
 
   if (item._body) {
     lines.push(item._body);
@@ -190,6 +191,15 @@ export function renderCard(cfg, item) {
   lines.push('');
 
   lines.push(`🔗 [原文](${item.url})`);
+
+  // Append the copyable bookmark block at the very end of the card so
+  // QQ-Mail users (whose mail client drops mailto query params) can
+  // long-press to copy subject/body.
+  const block = bookmarkBlock(cfg, item);
+  if (block.length > 0) {
+    lines.push('', ...block);
+  }
+
   return lines.join('\n');
 }
 

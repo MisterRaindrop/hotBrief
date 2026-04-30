@@ -140,15 +140,15 @@ export function labelForSource(cfg, sourceId) {
  *   1234567 → "1.2M"
  */
 /**
- * Build a `mailto:` bookmark link rendered as a Markdown anchor, or
- * null when bookmarking is disabled in config.
+ * Compose the bookmark payload (recipient, subject, body) for an item.
+ * Returns null when bookmarking is disabled.
  *
- * The mail composer is pre-filled with a subject identifying the article
- * and a body containing title + URL + source attribution, so a single
- * tap (in iOS Mail or any default mail handler) plus "send" lands the
- * item in the user's own inbox as a persistent bookmark.
+ * NOTE: WeChat's in-app browser strips the entire query string from
+ * mailto: URLs before delegating to the mail app, so we no longer
+ * embed subject/body in the URL. The user gets a long-pressable
+ * plaintext block instead.
  */
-export function bookmarkLink(cfg, item) {
+function bookmarkPayload(cfg, item) {
   const bm = cfg?.bookmark;
   if (!bm || bm.enabled === false || bm.type !== 'mailto' || !bm.mailto_address) return null;
 
@@ -158,11 +158,54 @@ export function bookmarkLink(cfg, item) {
   const body =
     `${item.title}\n${item.url}\n\n---\n` +
     `来自 hotBrief · ${labelForSource(cfg, item.source)} · ${date}`;
+  // Recipient-only mailto: WeChat-safe (no query string to strip).
+  const mailtoUrl = `mailto:${bm.mailto_address}`;
 
-  const url = `mailto:${rfc3986(bm.mailto_address)}` +
-    `?subject=${rfc3986(subject)}` +
-    `&body=${rfc3986(body)}`;
-  return `[📧 收藏](${url})`;
+  return { recipient: bm.mailto_address, subject, body, mailtoUrl };
+}
+
+/**
+ * Inline "open mail composer" link used in compact contexts. WeChat
+ * strips mailto query strings, so the URL only carries the recipient.
+ * Returns null when bookmarking is disabled.
+ */
+export function bookmarkLink(cfg, item) {
+  const p = bookmarkPayload(cfg, item);
+  return p ? `[📧 写邮件](${p.mailtoUrl})` : null;
+}
+
+/**
+ * Long-pressable bookmark block. WeChat's in-app browser strips ALL
+ * mailto query parameters, so the link only carries the recipient and
+ * the subject/body live in two long-pressable code blocks the user
+ * pastes into the mail composer manually.
+ *
+ * Workflow:
+ *   1. Tap "📧 写邮件" → mail composer opens (recipient pre-filled)
+ *   2. Switch back to WeChat, long-press the **主题** code block → copy
+ *      → switch to mail, paste in the subject field
+ *   3. Switch back to WeChat, long-press the **正文** code block → copy
+ *      → switch to mail, paste in the body field
+ *
+ * Returns an array of Markdown lines, or [] when bookmarking is disabled.
+ */
+export function bookmarkBlock(cfg, item) {
+  const p = bookmarkPayload(cfg, item);
+  if (!p) return [];
+
+  return [
+    `📧 [写邮件给自己](${p.mailtoUrl})  ·  收件人已自动填好`,
+    '',
+    '**主题**（长按下方代码块 → 全选 → 复制）：',
+    '```',
+    p.subject,
+    '```',
+    '',
+    '**正文**（长按下方代码块 → 全选 → 复制）：',
+    '```',
+    p.body,
+    '```',
+  ];
 }
 
 /**
@@ -334,9 +377,9 @@ export async function pushFulltext(cfg, target) {
       ? `**多平台共振**：${platforms.join(' · ')}`
       : `**来源**：${labelForSource(cfg, lead.source)}`,
   );
-  const bm = bookmarkLink(cfg, lead);
-  if (bm) sections.push(`**收藏**：${bm}`);
   sections.push('');
+  const bm = bookmarkBlock(cfg, lead);
+  if (bm.length > 0) sections.push(...bm, '');
 
   if (tldr) sections.push(`**TLDR**：${tldr}`, '');
   sections.push('---', '');

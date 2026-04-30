@@ -316,9 +316,15 @@ rss:
       weight: 1
 
     # ── Reddit subreddits (RSS endpoints; user-agent + proxy required) ──
+    # NOTE: jina.ai's reader currently returns HTTP 451 (Unavailable For
+    # Legal Reasons) for reddit.com URLs, so the foreign-fulltext lane
+    # cannot pull article bodies for these feeds. We ship them disabled
+    # by default; flip enabled: true if you have an alternate reader or
+    # only want the title in the digest.
     - id: "rss-reddit-postgres"
       url: "https://www.reddit.com/r/PostgreSQL/.rss"
       label: "🟧 r/PostgreSQL"
+      enabled: false
       top_n: 5
       category: "tech"
       weight: 1
@@ -326,6 +332,7 @@ rss:
     - id: "rss-reddit-dataeng"
       url: "https://www.reddit.com/r/dataengineering/.rss"
       label: "🟧 r/dataengineering"
+      enabled: false
       top_n: 5
       category: "tech"
       weight: 1
@@ -333,6 +340,7 @@ rss:
     - id: "rss-reddit-ml"
       url: "https://www.reddit.com/r/MachineLearning/.rss"
       label: "🟧 r/MachineLearning"
+      enabled: false
       top_n: 5
       category: "tech"
       weight: 1
@@ -340,6 +348,7 @@ rss:
     - id: "rss-reddit-localllama"
       url: "https://www.reddit.com/r/LocalLLaMA/.rss"
       label: "🟧 r/LocalLLaMA"
+      enabled: false
       top_n: 5
       category: "tech"
       weight: 1
